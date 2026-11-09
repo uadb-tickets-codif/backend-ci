@@ -24,7 +24,8 @@ RUN npx prisma generate
 FROM node:${NODE_VERSION}-alpine AS runtime
 WORKDIR /app
 ENV NODE_ENV=production
-RUN apk add --no-cache openssl
+RUN apk add --no-cache openssl \
+ && mkdir -p /app/uploads && chown node:node /app/uploads
 COPY --from=deps  --chown=node:node /app/node_modules ./node_modules
 COPY --from=build --chown=node:node /app/dist ./dist
 COPY --from=build --chown=node:node /app/prisma ./prisma
