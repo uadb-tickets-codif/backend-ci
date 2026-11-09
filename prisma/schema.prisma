@@ -6,3 +6,38 @@ datasource db {
   provider = "postgresql"
   url      = env("DATABASE_URL")
 }
+
+enum Role {
+  STUDENT
+  CONTROLLER
+  ADMIN
+}
+
+enum Gender {
+  MALE
+  FEMALE
+}
+
+enum CodificationStatus {
+  NOT_STARTED
+  DOCUMENTS_SUBMITTED
+  DOCUMENTS_APPROVED
+  DOCUMENTS_REJECTED
+  BED_SELECTED
+}
+
+model User {
+  id                 String             @id @default(uuid())
+  studentNumber      String?            @unique @map("student_number")
+  lastName           String             @map("last_name")
+  firstName          String             @map("first_name")
+  email              String             @unique
+  passwordHash       String             @map("password_hash")
+  role               Role               @default(STUDENT)
+  gender             Gender
+  codificationStatus CodificationStatus @default(NOT_STARTED) @map("codification_status")
+  createdAt          DateTime           @default(now()) @map("created_at")
+  updatedAt          DateTime           @updatedAt @map("updated_at")
+
+  @@map("users")
+}
