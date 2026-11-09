@@ -46,6 +46,32 @@ retourne un jeton Bearer JWT valable une heure. Utiliser
 requiert un jeton valide et `GET /auth/admin` requiert en plus le rôle `ADMIN`.
 Les rôles disponibles sont `STUDENT`, `CONTROLLER` et `ADMIN`.
 
+### Tester un compte administrateur en local
+
+L'inscription attribue toujours le rôle `STUDENT`. Pour tester
+`GET /auth/admin` en développement local, inscrivez d'abord un compte, puis
+attribuez-lui le rôle administrateur dans la base PostgreSQL locale :
+
+```sh
+docker compose exec postgres psql -U uadb -d uadb
+```
+
+Dans `psql`, remplacez l'adresse par celle du compte inscrit :
+
+```sql
+UPDATE users
+SET role = 'ADMIN'
+WHERE email = 'votre-email@example.com'
+RETURNING email, role;
+```
+
+Vérifiez que le résultat indique `ADMIN`, puis quittez `psql` avec `\q`.
+Dans Swagger (`http://localhost:3001/api` ou le port configuré), appelez
+`POST /auth/login` avec ce compte, cliquez sur **Authorize** et saisissez le
+jeton `accessToken` retourné. `GET /auth/admin` doit alors répondre `200`.
+Cette manipulation est réservée à la base de développement local ; ne
+l'appliquez pas à une base partagée ou de production.
+
 Pour arrêter PostgreSQL, exécuter `docker compose down`. Les données restent
 conservées dans le volume `postgres16_data`.
 
