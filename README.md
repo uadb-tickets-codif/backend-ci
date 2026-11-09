@@ -17,6 +17,7 @@ NestJS, Prisma, PostgreSQL, Docker, Jenkins
 ```sh
 npm install
 cp .env.example .env
+# Définir JWT_SECRET dans .env avec une valeur générée par `openssl rand -base64 48`
 # Compose du dépôt backend-ci : développement local uniquement
 docker compose up -d postgres
 npm run prisma:generate
@@ -33,6 +34,17 @@ La sonde `GET /health` vérifie la connexion PostgreSQL : elle renvoie `200`
 si la base est accessible, sinon `503`. Swagger est disponible sur
 `http://localhost:3001/api` (ou le port configuré) et le document OpenAPI JSON
 sur `/api-json`. CORS et la validation globale des requêtes sont activés.
+
+## Authentification
+
+Configurer `JWT_SECRET` dans `.env` avec une valeur aléatoire d'au moins
+32 caractères (par exemple `openssl rand -base64 48`). `POST /auth/register`
+crée un compte étudiant avec un mot de passe haché ; le rôle est toujours
+`STUDENT` et ne peut pas être choisi à l'inscription. `POST /auth/login`
+retourne un jeton Bearer JWT valable une heure. Utiliser
+`Authorization: Bearer <token>` sur les routes protégées. `GET /auth/me`
+requiert un jeton valide et `GET /auth/admin` requiert en plus le rôle `ADMIN`.
+Les rôles disponibles sont `STUDENT`, `CONTROLLER` et `ADMIN`.
 
 Pour arrêter PostgreSQL, exécuter `docker compose down`. Les données restent
 conservées dans le volume `postgres16_data`.
