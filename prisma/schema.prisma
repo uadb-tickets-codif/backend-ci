@@ -6,3 +6,222 @@ datasource db {
   provider = "postgresql"
   url      = env("DATABASE_URL")
 }
+
+enum Role {
+  STUDENT
+  CONTROLLER
+  ADMIN
+}
+
+enum Gender {
+  MALE
+  FEMALE
+}
+
+enum MealService {
+  BREAKFAST
+  LUNCH
+  DINNER
+}
+
+enum TicketStatus {
+  UNUSED
+  USED
+  EXPIRED
+}
+
+enum CodificationStatus {
+  NOT_STARTED
+  DOCUMENTS_SUBMITTED
+  DOCUMENTS_APPROVED
+  DOCUMENTS_REJECTED
+  BED_SELECTED
+}
+
+enum DocStatus {
+  PENDING
+  APPROVED
+  REJECTED
+}
+
+enum BedStatus {
+  AVAILABLE
+  OCCUPIED
+  MAINTENANCE
+}
+
+enum AssignmentStatus {
+  ACTIVE
+  CANCELLED
+  EXPIRED
+}
+
+enum TransactionType {
+  CREDIT
+  DEBIT
+}
+
+enum ScanResult {
+  OK
+  INSUFFICIENT_BALANCE
+  ALREADY_SERVED
+  INVALID_TOKEN
+  TICKET_NOT_FOUND
+}
+
+model User {
+  id                 String             @id @default(uuid())
+  studentNumber      String?            @unique @map("student_number")
+  lastName           String             @map("last_name")
+  firstName          String             @map("first_name")
+  email              String             @unique
+  passwordHash       String             @map("password_hash")
+  role               Role               @default(STUDENT)
+  gender             Gender
+  codificationStatus CodificationStatus @default(NOT_STARTED) @map("codification_status")
+  createdAt          DateTime           @default(now()) @map("created_at")
+  updatedAt          DateTime           @updatedAt @map("updated_at")
+
+  wallet      Wallet?
+  tickets     Ticket[]
+  mealScans   MealScan[]   @relation("StudentScans")
+  issuedScans MealScan[]   @relation("ControllerScans")
+  documents   Document[]
+  assignments Assignment[]
+
+  @@map("users")
+}
+
+model CodifiableStudent {
+  id            String   @id @default(uuid())
+  studentNumber String   @unique @map("student_number")
+  lastName      String   @map("last_name")
+  firstName     String   @map("first_name")
+  birthDate     DateTime @map("birth_date")
+  genre         Gender
+  level         String
+  email         String   @unique
+  importedAt    DateTime @default(now()) @map("imported_at")
+
+  @@map("codifiable_students")
+}
+
+model Wallet {
+  id        String   @id @default(uuid())
+  userId    String   @unique @map("user_id")
+  balance   Float    @default(0.0)
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  user         User          @relation(fields: [userId], references: [id], onDelete: Cascade)
+  transactions Transaction[]
+
+  @@map("wallets")
+}
+
+model Transaction {
+  id        String          @id @default(uuid())
+  walletId  String          @map("wallet_id")
+  type      TransactionType
+  amount    Float
+  createdAt DateTime        @default(now()) @map("created_at")
+
+  wallet Wallet @relation(fields: [walletId], references: [id], onDelete: Cascade)
+
+  @@map("transactions")
+}
+
+model Ticket {
+  id        String       @id @default(uuid())
+  studentId String       @map("student_id")
+  status    TicketStatus @default(UNUSED)
+  createdAt DateTime     @default(now()) @map("created_at")
+  usedAt    DateTime?    @map("used_at")
+
+  student   User       @relation(fields: [studentId], references: [id], onDelete: Cascade)
+  mealScans MealScan[]
+
+  @@map("tickets")
+}
+
+model MealScan {
+  id           String      @id @default(uuid())
+  studentId    String      @map("student_id")
+  controllerId String      @map("controller_id")
+  ticketId     String?     @map("ticket_id")
+  service      MealService
+  date         DateTime    @map("date")
+  result       ScanResult
+  createdAt    DateTime    @default(now()) @map("created_at")
+
+  student    User    @relation("StudentScans", fields: [studentId], references: [id], onDelete: Cascade)
+  controller User    @relation("ControllerScans", fields: [controllerId], references: [id])
+  ticket     Ticket? @relation(fields: [ticketId], references: [id])
+
+  @@map("meal_scans")
+}
+
+model Document {
+  id              String    @id @default(uuid())
+  userId          String    @map("user_id")
+  type            String
+  filePath        String    @map("file_path")
+  status          DocStatus @default(PENDING)
+  rejectionReason String?   @map("rejection_reason")
+  createdAt       DateTime  @default(now()) @map("created_at")
+  updatedAt       DateTime  @updatedAt @map("updated_at")
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("documents")
+}
+
+model Pavilion {
+  id        String   @id @default(uuid())
+  name      String   @unique
+  gender    Gender
+  createdAt DateTime @default(now()) @map("created_at")
+
+  rooms Room[]
+
+  @@map("pavilions")
+}
+
+model Room {
+  id         String @id @default(uuid())
+  pavilionId String @map("pavilion_id")
+  number     String
+  floor      Int
+
+  pavilion Pavilion @relation(fields: [pavilionId], references: [id], onDelete: Cascade)
+  beds     Bed[]
+
+  @@unique([pavilionId, number])
+  @@map("rooms")
+}
+
+model Bed {
+  id     String    @id @default(uuid())
+  roomId String    @map("room_id")
+  label  String
+  status BedStatus @default(AVAILABLE)
+
+  room        Room         @relation(fields: [roomId], references: [id], onDelete: Cascade)
+  assignments Assignment[]
+
+  @@unique([roomId, label])
+  @@map("beds")
+}
+
+model Assignment {
+  id        String           @id @default(uuid())
+  userId    String           @map("user_id")
+  bedId     String           @map("bed_id")
+  status    AssignmentStatus @default(ACTIVE)
+  createdAt DateTime         @default(now()) @map("created_at")
+  updatedAt DateTime         @updatedAt @map("updated_at")
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  bed  Bed  @relation(fields: [bedId], references: [id], onDelete: Cascade)
+
+  @@map("assignments")
+}
