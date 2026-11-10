@@ -163,8 +163,10 @@ model MealScan {
 model Document {
   id              String    @id @default(uuid())
   userId          String    @map("user_id")
-  type            String
+  type            String    // Ex: "CNI" ou "STUDENT_CARD"
   filePath        String    @map("file_path")
+  fileName        String?   @map("file_name") // Nom d'origine sécurisé
+  mimeType        String?   @map("mime_type") // Ex: application/pdf, image/png
   status          DocStatus @default(PENDING)
   rejectionReason String?   @map("rejection_reason")
   createdAt       DateTime  @default(now()) @map("created_at")
