@@ -46,6 +46,31 @@ retourne un jeton Bearer JWT valable une heure. Utiliser
 requiert un jeton valide et `GET /auth/admin` requiert en plus le rôle `ADMIN`.
 Les rôles disponibles sont `STUDENT`, `CONTROLLER` et `ADMIN`.
 
+## Portefeuille et tickets
+
+Les routes de portefeuille et de tickets requièrent un jeton Bearer obtenu via
+`POST /auth/login`. Le portefeuille est créé au premier accès avec un solde nul.
+Les montants sont des entiers en FCFA (`XOF`).
+
+| Méthode | Route                  | Description                                  |
+| ------- | ---------------------- | -------------------------------------------- |
+| `GET`   | `/wallet`              | Consulter le solde courant                   |
+| `POST`  | `/wallet/top-up`       | Simuler une recharge                         |
+| `GET`   | `/wallet/transactions` | Consulter l’historique, y compris les échecs |
+| `GET`   | `/tickets/prices`      | Obtenir les tarifs par type de repas         |
+| `POST`  | `/tickets/purchase`    | Simuler l’achat d’un ou plusieurs tickets    |
+
+Une recharge accepte `{"amount": 1000}`. Un achat accepte par exemple
+`{"service": "LUNCH", "quantity": 1}`. Les types de repas sont `BREAKFAST`,
+`LUNCH` et `DINNER`; les tarifs sont respectivement 50, 100 et 100 FCFA.
+Chaque achat réussi débite le portefeuille et crée les tickets correspondants
+avec le statut `UNUSED`. Les transactions sont enregistrées comme `CREDIT`
+(recharge) ou `DEBIT` (achat), et une transaction simulée en échec ne crée pas
+de ticket.
+Pour tester un paiement refusé sans modifier le solde, ajouter
+`"simulateFailure": true` à la recharge ou à l’achat. Ces paiements simulés ne
+remplacent pas une intégration de paiement réelle.
+
 ### Tester un compte administrateur en local
 
 L'inscription attribue toujours le rôle `STUDENT`. Pour tester
@@ -104,7 +129,7 @@ Les tests unitaires suivent la convention NestJS et se trouvent dans
 prisma/                 Schéma Prisma et migrations versionnées
 src/
   auth/                 Module d'authentification
-  tickets/              Module des tickets de restauration
+  tickets/              Portefeuille, transactions et tickets de restauration
   codification/         Module de codification
   health/               Sonde HTTP et vérification de PostgreSQL
   prisma/               Service et module Prisma
