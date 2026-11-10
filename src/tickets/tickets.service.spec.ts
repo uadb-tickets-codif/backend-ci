@@ -1,7 +1,10 @@
 import { BadRequestException } from '@nestjs/common';
+import { JwtService } from '@nestjs/jwt';
 import { Test, type TestingModule } from '@nestjs/testing';
 import {
   MealService,
+  Role,
+  ScanResult,
   TransactionStatus,
   TransactionType,
 } from '@prisma/client';
@@ -14,12 +17,18 @@ describe('TicketsService', () => {
   let wallet: { id: string; balance: number };
   let transactions: Array<Record<string, unknown>>;
   let tickets: Array<Record<string, unknown>>;
+  let scans: Array<Record<string, unknown>>;
+  let jwtService: JwtService;
   let module: TestingModule;
 
   beforeEach(async () => {
     wallet = { id: 'wallet-1', balance: 0 };
     transactions = [];
     tickets = [];
+    scans = [];
+    jwtService = new JwtService({
+      secret: 'test-secret-that-is-long-enough-for-jwt-signing',
+    });
 
     const transactionClient = {
       wallet: {
@@ -75,14 +84,49 @@ describe('TicketsService', () => {
           },
         ),
       },
+      mealScan: {
+        findFirst: vi.fn(
+          async ({
+            where,
+          }: {
+            where: {
+              studentId: string;
+              service: MealService;
+              date: Date;
+              result: ScanResult;
+            };
+          }) =>
+            scans.find(
+              (scan) =>
+                scan.studentId === where.studentId &&
+                scan.service === where.service &&
+                (scan.date as Date).getTime() === where.date.getTime() &&
+                scan.result === where.result,
+            ) ?? null,
+        ),
+        create: vi.fn(async ({ data }: { data: Record<string, unknown> }) => {
+          const scan = { id: `scan-${scans.length + 1}`, ...data };
+          scans.push(scan);
+          return scan;
+        }),
+      },
     };
 
     const prismaMock = {
+      user: {
+        findUnique: vi.fn(async ({ where }: { where: { id: string } }) =>
+          where.id === 'student-1'
+            ? { id: 'student-1', role: Role.STUDENT }
+            : null,
+        ),
+      },
       wallet: {
         upsert: vi.fn(async () => wallet),
+        findUniqueOrThrow: vi.fn(async () => ({ balance: wallet.balance })),
       },
       transaction: transactionClient.transaction,
       ticket: transactionClient.ticket,
+      mealScan: transactionClient.mealScan,
       $transaction: vi.fn(
         async (
           callback: (client: typeof transactionClient) => Promise<unknown>,
@@ -94,6 +138,7 @@ describe('TicketsService', () => {
       providers: [
         TicketsService,
         { provide: PrismaService, useValue: prismaMock },
+        { provide: JwtService, useValue: jwtService },
       ],
     }).compile();
     service = module.get(TicketsService);
@@ -202,5 +247,108 @@ describe('TicketsService', () => {
     await expect(service.getTransactions('student-1')).resolves.toMatchObject([
       { amount: 100, currency: 'XOF', type: TransactionType.CREDIT },
     ]);
+  });
+
+  it('issues a renewable signed QR token with a five-minute expiry', async () => {
+    const first = await service.createQrToken('student-1');
+    const second = await service.createQrToken('student-1');
+    const payload = await jwtService.verifyAsync<{
+      sub: string;
+      purpose: string;
+    }>(first.qrToken);
+
+    expect(first.expiresIn).toBe(300);
+    expect(first.qrToken).not.toBe(second.qrToken);
+    expect(payload).toMatchObject({
+      sub: 'student-1',
+      purpose: 'meal-scan',
+    });
+  });
+
+  it('accepts a valid scan, debits the meal price and logs it', async () => {
+    await service.topUp('student-1', { amount: 500 });
+    const { qrToken } = await service.createQrToken('student-1');
+
+    const result = await service.scan('controller-1', {
+      qrToken,
+      service: MealService.LUNCH,
+    });
+
+    expect(result).toMatchObject({
+      result: ScanResult.OK,
+      amount: 100,
+      balance: 400,
+    });
+    expect(scans).toHaveLength(1);
+    expect(scans[0]).toMatchObject({
+      studentId: 'student-1',
+      controllerId: 'controller-1',
+      service: MealService.LUNCH,
+      result: ScanResult.OK,
+    });
+    expect(transactions.at(-1)).toMatchObject({
+      type: TransactionType.DEBIT,
+      status: TransactionStatus.SUCCESS,
+      amount: 100,
+    });
+  });
+
+  it('records an insufficient-balance scan without debiting', async () => {
+    const { qrToken } = await service.createQrToken('student-1');
+
+    const result = await service.scan('controller-1', {
+      qrToken,
+      service: MealService.DINNER,
+    });
+
+    expect(result).toMatchObject({
+      result: ScanResult.INSUFFICIENT_BALANCE,
+      balance: 0,
+    });
+    expect(wallet.balance).toBe(0);
+    expect(scans[0]).toMatchObject({
+      result: ScanResult.INSUFFICIENT_BALANCE,
+    });
+  });
+
+  it('prevents a second serving for the same service and day', async () => {
+    await service.topUp('student-1', { amount: 500 });
+    const { qrToken } = await service.createQrToken('student-1');
+    const first = await service.scan('controller-1', {
+      qrToken,
+      service: MealService.BREAKFAST,
+    });
+    const second = await service.scan('controller-1', {
+      qrToken,
+      service: MealService.BREAKFAST,
+    });
+
+    expect(first).toMatchObject({ result: ScanResult.OK, balance: 450 });
+    expect(second).toMatchObject({
+      result: ScanResult.ALREADY_SERVED,
+      balance: 450,
+    });
+    expect(wallet.balance).toBe(450);
+    expect(scans.map((scan) => scan.result)).toEqual([
+      ScanResult.OK,
+      ScanResult.ALREADY_SERVED,
+    ]);
+  });
+
+  it('rejects and journals an invalid QR token', async () => {
+    const result = await service.scan('controller-1', {
+      qrToken: 'not-a-valid-token',
+      service: MealService.LUNCH,
+    });
+
+    expect(result).toMatchObject({
+      result: ScanResult.INVALID_TOKEN,
+      message: expect.stringContaining('invalide'),
+    });
+    expect(scans[0]).toMatchObject({
+      controllerId: 'controller-1',
+      result: ScanResult.INVALID_TOKEN,
+    });
+    expect(scans[0]).not.toHaveProperty('studentId');
   });
 });

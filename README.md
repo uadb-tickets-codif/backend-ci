@@ -59,6 +59,8 @@ Les montants sont des entiers en FCFA (`XOF`).
 | `GET`   | `/wallet/transactions` | Consulter l’historique, y compris les échecs |
 | `GET`   | `/tickets/prices`      | Obtenir les tarifs par type de repas         |
 | `POST`  | `/tickets/purchase`    | Simuler l’achat d’un ou plusieurs tickets    |
+| `POST`  | `/tickets/qr-token`    | Générer/renouveler un jeton QR (étudiant)     |
+| `POST`  | `/tickets/scan`        | Valider un repas (contrôleur ou admin)       |
 
 Une recharge accepte `{"amount": 1000}`. Un achat accepte par exemple
 `{"service": "LUNCH", "quantity": 1}`. Les types de repas sont `BREAKFAST`,
@@ -70,6 +72,15 @@ de ticket.
 Pour tester un paiement refusé sans modifier le solde, ajouter
 `"simulateFailure": true` à la recharge ou à l’achat. Ces paiements simulés ne
 remplacent pas une intégration de paiement réelle.
+
+Un étudiant authentifié demande un jeton renouvelable via
+`POST /tickets/qr-token`; le jeton signé expire après 5 minutes et peut être
+encodé en QR par le client. Un contrôleur ou administrateur scanne en envoyant
+`{"qrToken": "<jeton>", "service": "LUNCH"}` à `POST /tickets/scan`.
+Chaque scan journalise son résultat. Un étudiant ne peut être servi qu’une
+fois par service et par journée (date UTC, identique à l’heure locale du Sénégal).
+Un scan valide débite le tarif du repas; les réponses distinguent notamment les
+résultats `OK`, `INSUFFICIENT_BALANCE`, `ALREADY_SERVED` et `INVALID_TOKEN`.
 
 ### Tester un compte administrateur en local
 

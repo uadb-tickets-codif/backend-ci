@@ -48,6 +48,14 @@ enum TransactionStatus {
   FAILED
 }
 
+enum ScanResult {
+  OK
+  INSUFFICIENT_BALANCE
+  ALREADY_SERVED
+  INVALID_TOKEN
+  TICKET_NOT_FOUND
+}
+
 model User {
   id                 String             @id @default(uuid())
   studentNumber      String?            @unique @map("student_number")
@@ -62,6 +70,8 @@ model User {
   updatedAt          DateTime           @updatedAt @map("updated_at")
   wallet             Wallet?
   tickets            Ticket[]
+  studentScans       MealScan[]         @relation("StudentScans")
+  issuedScans        MealScan[]         @relation("ControllerScans")
 
   @@map("users")
 }
@@ -98,7 +108,26 @@ model Ticket {
   createdAt DateTime     @default(now()) @map("created_at")
   usedAt    DateTime?    @map("used_at")
   student   User         @relation(fields: [studentId], references: [id], onDelete: Cascade)
+  mealScans MealScan[]
 
   @@index([studentId, status])
   @@map("tickets")
+}
+
+model MealScan {
+  id           String      @id @default(uuid())
+  studentId    String?     @map("student_id")
+  controllerId String      @map("controller_id")
+  ticketId     String?     @map("ticket_id")
+  service      MealService
+  date         DateTime    @db.Date
+  result       ScanResult
+  createdAt    DateTime    @default(now()) @map("created_at")
+  student      User?       @relation("StudentScans", fields: [studentId], references: [id], onDelete: SetNull)
+  controller   User        @relation("ControllerScans", fields: [controllerId], references: [id])
+  ticket       Ticket?     @relation(fields: [ticketId], references: [id])
+
+  @@index([studentId, service, date, result])
+  @@index([controllerId, createdAt])
+  @@map("meal_scans")
 }
