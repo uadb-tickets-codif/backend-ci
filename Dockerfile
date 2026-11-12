@@ -30,6 +30,7 @@ COPY --from=deps  --chown=node:node /app/node_modules ./node_modules
 COPY --from=build --chown=node:node /app/dist ./dist
 COPY --from=build --chown=node:node /app/prisma ./prisma
 COPY --chown=node:node package*.json ./
+RUN rm -rf /usr/local/lib/node_modules/npm /usr/local/bin/npm /usr/local/bin/npx
 USER node
 EXPOSE 3001
 CMD ["sh", "-c", "node_modules/.bin/prisma migrate deploy && node dist/main.js"]
