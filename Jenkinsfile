@@ -81,6 +81,14 @@ pipeline {
     }
   }
 
+  stage('Déclencher le déploiement') {
+    when { branch 'develop' }
+      steps {
+        build job: '/deployment-cd',
+              wait: false,
+              parameters: [string(name: 'BACKEND_TAG', value: TAG)]
+      }
+    }
   post {
     always {
       sh '''
