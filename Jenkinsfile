@@ -79,9 +79,8 @@ pipeline {
         }
       }
     }
-  }
 
-  stage('Déclencher le déploiement') {
+    stage('Déclencher le déploiement') {
     when { branch 'develop' }
       steps {
         build job: '/deployment-cd',
@@ -89,6 +88,8 @@ pipeline {
               parameters: [string(name: 'BACKEND_TAG', value: TAG)]
       }
     }
+  }
+
   post {
     always {
       sh '''
