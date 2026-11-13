@@ -15,12 +15,14 @@ import {
   Query,
 } from '@nestjs/common';
 import { FileInterceptor, FileFieldsInterceptor } from '@nestjs/platform-express';
-import { ApiTags, ApiConsumes, ApiBody, ApiQuery, ApiOperation } from '@nestjs/swagger';
+import { ApiTags, ApiConsumes, ApiBody, ApiQuery, ApiOperation, ApiParam } from '@nestjs/swagger';
 import { Response } from 'express';
 import { CodificationService, MulterFile } from './codification.service';
 import { VerifyStudentDto } from './dto/verify-student.dto';
 import { UploadDocumentsDto } from './dto/upload-documents.dto';
 import { ValidateDocumentDto } from './dto/validate-document.dto';
+import { GetBedsFilterDto } from './dto/get-beds-filter.dto';
+import { ReserveBedDto } from './dto/reserve-bed.dto';
 
 // Filtre de sécurité : MIME types autorisés (PDF, JPG, PNG)
 const documentFileFilter = (req: any, file: MulterFile, callback: any) => {
@@ -153,5 +155,26 @@ export class CodificationController {
     res.setHeader('Content-Type', mimeType);
     res.setHeader('Content-Disposition', `inline; filename="${fileName}"`);
     stream.pipe(res);
+  }
+
+  // ==========================================
+  // CARTE 13 : ENDPOINTS (LITS & RÉSERVATION)
+  // ==========================================
+
+  @Get('beds')
+  @ApiOperation({ summary: 'Liste des lits avec filtres pavillon, étage, genre (Carte 13)' })
+  async getBeds(@Query() filters: GetBedsFilterDto) {
+    return this.codificationService.getFilteredBeds(filters);
+  }
+
+  @Post('beds/:id/reserve')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({ summary: 'Réservation atomique d’un lit avec verrouillage transactionnel (Carte 13)' })
+  @ApiParam({ name: 'id', description: 'UUID du lit à réserver' })
+  async reserveBed(
+    @Param('id') bedId: string,
+    @Body() dto: ReserveBedDto,
+  ) {
+    return this.codificationService.reserveBed(bedId, dto.studentNumber);
   }
 }

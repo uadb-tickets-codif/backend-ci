@@ -3,14 +3,23 @@ import {
   BadRequestException,
   NotFoundException,
   ForbiddenException,
+  ConflictException,
   InternalServerErrorException,
 } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import * as Papa from 'papaparse';
-import { Gender, DocStatus, CodificationStatus } from '@prisma/client';
+import {
+  Prisma,
+  Gender,
+  DocStatus,
+  CodificationStatus,
+  BedStatus,
+  AssignmentStatus,
+} from '@prisma/client';
 import { VerifyStudentDto } from './dto/verify-student.dto';
 import { UploadDocumentsDto } from './dto/upload-documents.dto';
 import { ValidateDocumentDto } from './dto/validate-document.dto';
+import { GetBedsFilterDto } from './dto/get-beds-filter.dto';
 import * as fs from 'fs';
 import * as path from 'path';
 import { v4 as uuidv4 } from 'uuid';
@@ -399,5 +408,160 @@ export class CodificationService {
       mimeType,
       fileName,
     };
+  }
+
+  // ==========================================
+  // CARTE 13 : LISTE DES LITS & RÉSERVATION VERROUILLÉE
+  // ==========================================
+
+  async getFilteredBeds(filters: GetBedsFilterDto) {
+    const { pavilion, floor, gender, status } = filters;
+
+    return this.prisma.bed.findMany({
+      where: {
+        status: status ?? BedStatus.AVAILABLE,
+        room: {
+          ...(floor !== undefined ? { floor } : {}),
+          pavilion: {
+            ...(gender ? { gender } : {}),
+            ...(pavilion
+              ? {
+                  OR: [
+                    { id: pavilion },
+                    { name: { contains: pavilion, mode: 'insensitive' } },
+                  ],
+                }
+              : {}),
+          },
+        },
+      },
+      include: {
+        room: {
+          include: {
+            pavilion: true,
+          },
+        },
+      },
+      orderBy: [
+        { room: { pavilion: { name: 'asc' } } },
+        { room: { floor: 'asc' } },
+        { room: { number: 'asc' } },
+        { label: 'asc' },
+      ],
+    });
+  }
+
+  async reserveBed(bedId: string, studentNumber: string) {
+    const normalizedStudentNumber = studentNumber.trim();
+
+    return this.prisma.$transaction(
+      async (tx) => {
+        // 1. Récupérer et vérifier l'étudiant
+        const user = await tx.user.findUnique({
+          where: { studentNumber: normalizedStudentNumber },
+          include: {
+            assignments: {
+              where: { status: AssignmentStatus.ACTIVE },
+            },
+          },
+        });
+
+        if (!user) {
+          throw new NotFoundException(
+            `Étudiant avec le matricule ${normalizedStudentNumber} introuvable.`,
+          );
+        }
+
+        if (user.codificationStatus !== CodificationStatus.DOCUMENTS_APPROVED) {
+          throw new ForbiddenException(
+            `Dossier non éligible à la réservation (statut actuel : ${user.codificationStatus}). Vos documents doivent être approuvés.`,
+          );
+        }
+
+        // 2. Règle métier : un seul lit actif par étudiant
+        if (user.assignments.length > 0) {
+          throw new ConflictException(
+            'Vous avez déjà réservé un lit actif. Un seul lit est autorisé par étudiant.',
+          );
+        }
+
+        // 3. Verrouillage pessimiste SQL (FOR UPDATE) sur la ligne du lit ciblé
+        // Empêche deux requêtes simultanées de lire le lit comme AVAILABLE en même temps
+        const lockedBeds = await tx.$queryRaw<
+          Array<{ id: string; status: string; room_id: string }>
+        >`
+          SELECT id, status, room_id
+          FROM beds
+          WHERE id = ${bedId}
+          FOR UPDATE
+        `;
+
+        if (!lockedBeds || lockedBeds.length === 0) {
+          throw new NotFoundException(`Lit avec l'ID ${bedId} introuvable.`);
+        }
+
+        const lockedBed = lockedBeds[0];
+
+        if (lockedBed.status !== BedStatus.AVAILABLE) {
+          throw new ConflictException(
+            `Ce lit n'est plus disponible (statut actuel : ${lockedBed.status}).`,
+          );
+        }
+
+        // 4. Vérifier la correspondance de genre entre l'étudiant et le pavillon
+        const room = await tx.room.findUnique({
+          where: { id: lockedBed.room_id },
+          include: { pavilion: true },
+        });
+
+        if (!room) {
+          throw new NotFoundException('Chambre associée introuvable.');
+        }
+
+        if (room.pavilion.gender !== user.gender) {
+          throw new ForbiddenException(
+            `Ce pavillon (${room.pavilion.name}) est réservé au genre ${room.pavilion.gender}.`,
+          );
+        }
+
+        // 5. Attribution atomique : création de l'assignment + mise à jour du lit et de l'utilisateur
+        const assignment = await tx.assignment.create({
+          data: {
+            userId: user.id,
+            bedId: lockedBed.id,
+            status: AssignmentStatus.ACTIVE,
+          },
+          include: {
+            bed: {
+              include: {
+                room: {
+                  include: { pavilion: true },
+                },
+              },
+            },
+          },
+        });
+
+        await tx.bed.update({
+          where: { id: lockedBed.id },
+          data: { status: BedStatus.OCCUPIED },
+        });
+
+        await tx.user.update({
+          where: { id: user.id },
+          data: { codificationStatus: CodificationStatus.BED_SELECTED },
+        });
+
+        return {
+          success: true,
+          message: 'Lit réservé avec succès.',
+          assignment,
+        };
+      },
+      {
+        isolationLevel: Prisma.TransactionIsolationLevel.ReadCommitted,
+        timeout: 10000,
+      },
+    );
   }
 }
