@@ -19,6 +19,7 @@ async function bootstrap() {
       'API de gestion des tickets de restauration et de la codification',
     )
     .setVersion('1.0.0')
+    .addBearerAuth()
     .build();
   const openApiDocument = SwaggerModule.createDocument(app, swaggerConfig);
   SwaggerModule.setup('api', app, openApiDocument);

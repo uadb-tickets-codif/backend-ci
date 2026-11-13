@@ -53,12 +53,26 @@ enum BedStatus {
 enum AssignmentStatus {
   ACTIVE
   CANCELLED
+enum MealService {
+  BREAKFAST
+  LUNCH
+  DINNER
+}
+
+enum TicketStatus {
+  UNUSED
+  USED
   EXPIRED
 }
 
 enum TransactionType {
   CREDIT
   DEBIT
+}
+
+enum TransactionStatus {
+  SUCCESS
+  FAILED
 }
 
 enum ScanResult {
@@ -88,6 +102,10 @@ model User {
   issuedScans MealScan[]   @relation("ControllerScans")
   documents   Document[]
   assignments Assignment[]
+  wallet             Wallet?
+  tickets            Ticket[]
+  studentScans       MealScan[]         @relation("StudentScans")
+  issuedScans        MealScan[]         @relation("ControllerScans")
 
   @@map("users")
 }
@@ -112,6 +130,11 @@ model Wallet {
   balance   Float    @default(0.0)
   updatedAt DateTime @updatedAt @map("updated_at")
 
+model Wallet {
+  id           String        @id @default(uuid())
+  userId       String        @unique @map("user_id")
+  balance      Int           @default(0)
+  updatedAt    DateTime      @updatedAt @map("updated_at")
   user         User          @relation(fields: [userId], references: [id], onDelete: Cascade)
   transactions Transaction[]
 
@@ -127,6 +150,15 @@ model Transaction {
 
   wallet Wallet @relation(fields: [walletId], references: [id], onDelete: Cascade)
 
+  id        String            @id @default(uuid())
+  walletId  String            @map("wallet_id")
+  type      TransactionType
+  status    TransactionStatus @default(SUCCESS)
+  amount    Int
+  createdAt DateTime          @default(now()) @map("created_at")
+  wallet    Wallet            @relation(fields: [walletId], references: [id], onDelete: Cascade)
+
+  @@index([walletId, createdAt])
   @@map("transactions")
 }
 
@@ -140,6 +172,14 @@ model Ticket {
   student   User       @relation(fields: [studentId], references: [id], onDelete: Cascade)
   mealScans MealScan[]
 
+  service   MealService
+  status    TicketStatus @default(UNUSED)
+  createdAt DateTime     @default(now()) @map("created_at")
+  usedAt    DateTime?    @map("used_at")
+  student   User         @relation(fields: [studentId], references: [id], onDelete: Cascade)
+  mealScans MealScan[]
+
+  @@index([studentId, status])
   @@map("tickets")
 }
 
@@ -226,4 +266,19 @@ model Assignment {
   bed  Bed  @relation(fields: [bedId], references: [id], onDelete: Cascade)
 
   @@map("assignments")
+}
+  studentId    String?     @map("student_id")
+  controllerId String      @map("controller_id")
+  ticketId     String?     @map("ticket_id")
+  service      MealService
+  date         DateTime    @db.Date
+  result       ScanResult
+  createdAt    DateTime    @default(now()) @map("created_at")
+  student      User?       @relation("StudentScans", fields: [studentId], references: [id], onDelete: SetNull)
+  controller   User        @relation("ControllerScans", fields: [controllerId], references: [id])
+  ticket       Ticket?     @relation(fields: [ticketId], references: [id])
+
+  @@index([studentId, service, date, result])
+  @@index([controllerId, createdAt])
+  @@map("meal_scans")
 }
