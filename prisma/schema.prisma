@@ -18,18 +18,6 @@ enum Gender {
   FEMALE
 }
 
-enum MealService {
-  BREAKFAST
-  LUNCH
-  DINNER
-}
-
-enum TicketStatus {
-  UNUSED
-  USED
-  EXPIRED
-}
-
 enum CodificationStatus {
   NOT_STARTED
   DOCUMENTS_SUBMITTED
@@ -38,21 +26,6 @@ enum CodificationStatus {
   BED_SELECTED
 }
 
-enum DocStatus {
-  PENDING
-  APPROVED
-  REJECTED
-}
-
-enum BedStatus {
-  AVAILABLE
-  OCCUPIED
-  MAINTENANCE
-}
-
-enum AssignmentStatus {
-  ACTIVE
-  CANCELLED
 enum MealService {
   BREAKFAST
   LUNCH
@@ -83,6 +56,23 @@ enum ScanResult {
   TICKET_NOT_FOUND
 }
 
+enum DocStatus {
+  PENDING
+  APPROVED
+  REJECTED
+}
+
+enum BedStatus {
+  AVAILABLE
+  OCCUPIED
+  MAINTENANCE
+}
+
+enum AssignmentStatus {
+  ACTIVE
+  CANCELLED
+}
+
 model User {
   id                 String             @id @default(uuid())
   studentNumber      String?            @unique @map("student_number")
@@ -95,40 +85,15 @@ model User {
   codificationStatus CodificationStatus @default(NOT_STARTED) @map("codification_status")
   createdAt          DateTime           @default(now()) @map("created_at")
   updatedAt          DateTime           @updatedAt @map("updated_at")
-
-  wallet      Wallet?
-  tickets     Ticket[]
-  mealScans   MealScan[]   @relation("StudentScans")
-  issuedScans MealScan[]   @relation("ControllerScans")
-  documents   Document[]
-  assignments Assignment[]
   wallet             Wallet?
   tickets            Ticket[]
   studentScans       MealScan[]         @relation("StudentScans")
   issuedScans        MealScan[]         @relation("ControllerScans")
+  documents          Document[]
+  assignments        Assignment[]
 
   @@map("users")
 }
-
-model CodifiableStudent {
-  id            String   @id @default(uuid())
-  studentNumber String   @unique @map("student_number")
-  lastName      String   @map("last_name")
-  firstName     String   @map("first_name")
-  birthDate     DateTime @map("birth_date")
-  genre         Gender
-  level         String
-  email         String   @unique
-  importedAt    DateTime @default(now()) @map("imported_at")
-
-  @@map("codifiable_students")
-}
-
-model Wallet {
-  id        String   @id @default(uuid())
-  userId    String   @unique @map("user_id")
-  balance   Float    @default(0.0)
-  updatedAt DateTime @updatedAt @map("updated_at")
 
 model Wallet {
   id           String        @id @default(uuid())
@@ -142,14 +107,6 @@ model Wallet {
 }
 
 model Transaction {
-  id        String          @id @default(uuid())
-  walletId  String          @map("wallet_id")
-  type      TransactionType
-  amount    Float
-  createdAt DateTime        @default(now()) @map("created_at")
-
-  wallet Wallet @relation(fields: [walletId], references: [id], onDelete: Cascade)
-
   id        String            @id @default(uuid())
   walletId  String            @map("wallet_id")
   type      TransactionType
@@ -165,13 +122,6 @@ model Transaction {
 model Ticket {
   id        String       @id @default(uuid())
   studentId String       @map("student_id")
-  status    TicketStatus @default(UNUSED)
-  createdAt DateTime     @default(now()) @map("created_at")
-  usedAt    DateTime?    @map("used_at")
-
-  student   User       @relation(fields: [studentId], references: [id], onDelete: Cascade)
-  mealScans MealScan[]
-
   service   MealService
   status    TicketStatus @default(UNUSED)
   createdAt DateTime     @default(now()) @map("created_at")
@@ -185,19 +135,34 @@ model Ticket {
 
 model MealScan {
   id           String      @id @default(uuid())
-  studentId    String      @map("student_id")
+  studentId    String?     @map("student_id")
   controllerId String      @map("controller_id")
   ticketId     String?     @map("ticket_id")
   service      MealService
-  date         DateTime    @map("date")
+  date         DateTime    @db.Date
   result       ScanResult
   createdAt    DateTime    @default(now()) @map("created_at")
+  student      User?       @relation("StudentScans", fields: [studentId], references: [id], onDelete: SetNull)
+  controller   User        @relation("ControllerScans", fields: [controllerId], references: [id])
+  ticket       Ticket?     @relation(fields: [ticketId], references: [id])
 
-  student    User    @relation("StudentScans", fields: [studentId], references: [id], onDelete: Cascade)
-  controller User    @relation("ControllerScans", fields: [controllerId], references: [id])
-  ticket     Ticket? @relation(fields: [ticketId], references: [id])
-
+  @@index([studentId, service, date, result])
+  @@index([controllerId, createdAt])
   @@map("meal_scans")
+}
+
+model CodifiableStudent {
+  id            String   @id @default(uuid())
+  studentNumber String   @unique @map("student_number")
+  lastName      String   @map("last_name")
+  firstName     String   @map("first_name")
+  birthDate     DateTime @map("birth_date")
+  genre         Gender
+  level         String
+  email         String   @unique
+  importedAt    DateTime @default(now()) @map("imported_at")
+
+  @@map("codifiable_students")
 }
 
 model Document {
@@ -266,19 +231,4 @@ model Assignment {
   bed  Bed  @relation(fields: [bedId], references: [id], onDelete: Cascade)
 
   @@map("assignments")
-}
-  studentId    String?     @map("student_id")
-  controllerId String      @map("controller_id")
-  ticketId     String?     @map("ticket_id")
-  service      MealService
-  date         DateTime    @db.Date
-  result       ScanResult
-  createdAt    DateTime    @default(now()) @map("created_at")
-  student      User?       @relation("StudentScans", fields: [studentId], references: [id], onDelete: SetNull)
-  controller   User        @relation("ControllerScans", fields: [controllerId], references: [id])
-  ticket       Ticket?     @relation(fields: [ticketId], references: [id])
-
-  @@index([studentId, service, date, result])
-  @@index([controllerId, createdAt])
-  @@map("meal_scans")
 }
