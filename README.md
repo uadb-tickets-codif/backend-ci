@@ -158,4 +158,4 @@ Le push et le déclenchement du déploiement ne se font que sur les branches `de
 | Ibrahima SYLLA | Backend : codification |
 | Mamadou WADE | Frontend |
 | Ibrahima WATT | Administration système : Dockerfiles, CI, sécurité des images |
-| Lamine Junior COLY | Scrum master, administration système : Jenkins, CD, coordination |
+| Mouhamadou Lamine COLY | Scrum master, administration système : Jenkins, CD, coordination |
