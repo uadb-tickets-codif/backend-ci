@@ -68,6 +68,56 @@ describe('TicketsService', () => {
         findMany: vi.fn(async () => transactions),
       },
       ticket: {
+        groupBy: vi.fn(
+          async ({ where }: { where: { studentId: string; status: string } }) => {
+            const counts = new Map<string, number>();
+            for (const ticket of tickets) {
+              if (ticket.studentId === where.studentId && ticket.status === where.status) {
+                counts.set(
+                  ticket.service as string,
+                  (counts.get(ticket.service as string) ?? 0) + 1,
+                );
+              }
+            }
+            return [...counts].map(([service, count]) => ({
+              service,
+              _count: { _all: count },
+            }));
+          },
+        ),
+        findFirst: vi.fn(
+          async ({
+            where,
+          }: {
+            where: { studentId: string; service: MealService; status: string };
+          }) =>
+            tickets
+              .filter(
+                (ticket) =>
+                  ticket.studentId === where.studentId &&
+                  ticket.service === where.service &&
+                  ticket.status === where.status,
+              )
+              .sort((a, b) => Number(a.order) - Number(b.order))[0] ?? null,
+        ),
+        updateMany: vi.fn(
+          async ({
+            where,
+            data,
+          }: {
+            where: { id: string; status: string };
+            data: Record<string, unknown>;
+          }) => {
+            const ticket = tickets.find(
+              (item) => item.id === where.id && item.status === where.status,
+            );
+            if (!ticket) {
+              return { count: 0 };
+            }
+            Object.assign(ticket, data);
+            return { count: 1 };
+          },
+        ),
         createManyAndReturn: vi.fn(
           async ({
             data,
@@ -76,6 +126,7 @@ describe('TicketsService', () => {
           }) => {
             const createdTickets = data.map((ticket, index) => ({
               id: `ticket-${tickets.length + index + 1}`,
+              order: tickets.length + index + 1,
               status: 'UNUSED',
               ...ticket,
             }));
@@ -85,6 +136,12 @@ describe('TicketsService', () => {
         ),
       },
       mealScan: {
+        findMany: vi.fn(
+          async ({ where }: { where: { studentId: string; result: ScanResult } }) =>
+            scans.filter(
+              (scan) => scan.studentId === where.studentId && scan.result === where.result,
+            ),
+        ),
         findFirst: vi.fn(
           async ({
             where,
@@ -333,6 +390,77 @@ describe('TicketsService', () => {
       ScanResult.OK,
       ScanResult.ALREADY_SERVED,
     ]);
+  });
+
+  it('consumes a prepaid ticket at scan time without debiting the wallet again', async () => {
+    await service.topUp('student-1', { amount: 500 });
+    await service.purchase('student-1', {
+      service: MealService.LUNCH,
+      quantity: 2,
+    });
+    expect(wallet.balance).toBe(300);
+    const { qrToken } = await service.createQrToken('student-1');
+
+    const result = await service.scan('controller-1', {
+      qrToken,
+      service: MealService.LUNCH,
+    });
+
+    expect(result).toMatchObject({
+      result: ScanResult.OK,
+      paymentMethod: 'TICKET',
+      balance: 300,
+    });
+    expect(wallet.balance).toBe(300);
+    expect(tickets.map((ticket) => ticket.status)).toEqual(['USED', 'UNUSED']);
+    expect(scans[0]).toMatchObject({
+      result: ScanResult.OK,
+      ticketId: 'ticket-1',
+    });
+    expect(
+      transactions.filter(
+        (transaction) => transaction.type === TransactionType.DEBIT,
+      ),
+    ).toHaveLength(1);
+  });
+
+  it('ignores prepaid tickets of another service and pays with the wallet', async () => {
+    await service.topUp('student-1', { amount: 500 });
+    await service.purchase('student-1', {
+      service: MealService.DINNER,
+      quantity: 1,
+    });
+    const { qrToken } = await service.createQrToken('student-1');
+
+    const result = await service.scan('controller-1', {
+      qrToken,
+      service: MealService.BREAKFAST,
+    });
+
+    expect(result).toMatchObject({
+      result: ScanResult.OK,
+      paymentMethod: 'WALLET',
+      amount: 50,
+      balance: 350,
+    });
+    expect(tickets[0]).toMatchObject({ status: 'UNUSED' });
+  });
+
+  it('counts unused tickets per service and lists served meals', async () => {
+    await service.topUp('student-1', { amount: 1000 });
+    await service.purchase('student-1', { service: MealService.LUNCH, quantity: 2 });
+    await service.purchase('student-1', { service: MealService.DINNER, quantity: 1 });
+    const { qrToken } = await service.createQrToken('student-1');
+    await service.scan('controller-1', { qrToken, service: MealService.LUNCH });
+
+    expect(await service.getAvailableTickets('student-1')).toEqual({
+      BREAKFAST: 0,
+      LUNCH: 1,
+      DINNER: 1,
+      total: 2,
+    });
+    const meals = await service.getMealHistory('student-1');
+    expect(meals).toEqual([expect.objectContaining({ service: MealService.LUNCH })]);
   });
 
   it('rejects and journals an invalid QR token', async () => {

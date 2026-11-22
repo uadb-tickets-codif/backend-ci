@@ -1,12 +1,13 @@
-import { IsNotEmpty, IsString } from 'class-validator';
-import { ApiProperty } from '@nestjs/swagger';
+import { IsOptional, IsString } from 'class-validator';
+import { ApiPropertyOptional } from '@nestjs/swagger';
 
 export class UploadDocumentsDto {
-  @ApiProperty({
-    example: '20260001',
-    description: 'Numéro de matricule de l étudiant effectuant le téléversement',
+  @ApiPropertyOptional({
+    deprecated: true,
+    description:
+      'Ignoré : l’étudiant est identifié par son jeton d’accès et le numéro rattaché à son compte.',
   })
-  @IsNotEmpty({ message: 'Le numéro de matricule est obligatoire' })
+  @IsOptional()
   @IsString()
-  studentNumber!: string;
+  studentNumber?: string;
 }

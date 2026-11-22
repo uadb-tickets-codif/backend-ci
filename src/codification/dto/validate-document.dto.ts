@@ -1,23 +1,25 @@
-import { IsEnum, IsNotEmpty, IsOptional, IsString, ValidateIf } from 'class-validator';
+import { IsIn, IsNotEmpty, IsString, MaxLength, ValidateIf } from 'class-validator';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { DocStatus } from '@prisma/client';
 
 export class ValidateDocumentDto {
   @ApiProperty({
-    enum: DocStatus,
+    enum: [DocStatus.APPROVED, DocStatus.REJECTED],
     example: DocStatus.APPROVED,
-    description: 'Nouveau statut du document (APPROVED ou REJECTED)',
+    description: 'Décision de l’administrateur (APPROVED ou REJECTED)',
   })
-  @IsEnum(DocStatus, { message: 'Statut invalide. Statuts acceptés: PENDING, APPROVED, REJECTED' })
+  @IsIn([DocStatus.APPROVED, DocStatus.REJECTED], {
+    message: 'Statut invalide. Statuts acceptés : APPROVED, REJECTED',
+  })
   status!: DocStatus;
 
   @ApiPropertyOptional({
     example: 'Copie de la CNI illisible ou périmée',
-    description: 'Motif de rejet obligatoire si le statut est REJECTED',
+    description: 'Motif de rejet, obligatoire si le statut est REJECTED',
   })
-  @ValidateIf((o) => o.status === DocStatus.REJECTED)
-  @IsNotEmpty({ message: 'Un motif de rejet est obligatoire en cas de refus d un document' })
+  @ValidateIf((o: ValidateDocumentDto) => o.status === DocStatus.REJECTED)
+  @IsNotEmpty({ message: 'Un motif de rejet est obligatoire en cas de refus d’un document' })
   @IsString()
-  @IsOptional()
+  @MaxLength(500)
   rejectionReason?: string;
 }

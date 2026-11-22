@@ -147,3 +147,6 @@ vite.config.ts.timestamp-*
 
 # Turbo Repo
 .turbo
+
+# Pièces d'identité déposées par les étudiants : ne jamais versionner
+/uploads/

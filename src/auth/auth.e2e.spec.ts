@@ -198,4 +198,117 @@ describe('Auth HTTP endpoints', () => {
     });
     expect(allowedResponse.status).toBe(200);
   });
+
+  it('does not store an unverified student number at registration', async () => {
+    const response = await fetch(`${baseUrl}/auth/register`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({
+        firstName: 'Ibou',
+        lastName: 'Fall',
+        email: 'ibou.fall@example.com',
+        password: 'a-strong-password-123',
+        gender: Gender.MALE,
+        studentNumber: '20269999',
+      }),
+    });
+
+    expect(response.status).toBe(201);
+    expect(await response.json()).toMatchObject({ studentNumber: null });
+  });
+
+  it('refuses the short-lived QR token as an API access token', async () => {
+    users.set('qr-student', {
+      id: 'qr-student',
+      studentNumber: null,
+      lastName: 'Diop',
+      firstName: 'Awa',
+      email: 'qr@example.com',
+      passwordHash: 'not-used-by-strategy',
+      role: Role.STUDENT,
+      gender: Gender.FEMALE,
+      codificationStatus: CodificationStatus.NOT_STARTED,
+      createdAt: new Date(),
+      updatedAt: new Date(),
+    });
+    const accessToken = await jwtService.signAsync({ sub: 'qr-student' });
+    const qrToken = await jwtService.signAsync(
+      { sub: 'qr-student', purpose: 'meal-scan' },
+      { expiresIn: 300 },
+    );
+
+    const ok = await fetch(`${baseUrl}/auth/me`, {
+      headers: { authorization: `Bearer ${accessToken}` },
+    });
+    const refused = await fetch(`${baseUrl}/auth/me`, {
+      headers: { authorization: `Bearer ${qrToken}` },
+    });
+    expect(ok.status).toBe(200);
+    expect(refused.status).toBe(401);
+  });
+
+  it('lets only an administrator create controller and admin accounts', async () => {
+    const body = JSON.stringify({
+      firstName: 'Moussa',
+      lastName: 'Ndiaye',
+      email: 'moussa.controleur@example.com',
+      password: 'a-strong-password-123',
+      gender: Gender.MALE,
+      role: Role.CONTROLLER,
+    });
+    const headers = (token?: string) => ({
+      'content-type': 'application/json',
+      ...(token ? { authorization: `Bearer ${token}` } : {}),
+    });
+    const base = {
+      lastName: 'Diop',
+      firstName: 'Awa',
+      passwordHash: 'x',
+      gender: Gender.FEMALE,
+      codificationStatus: CodificationStatus.NOT_STARTED,
+      createdAt: new Date(),
+      updatedAt: new Date(),
+      studentNumber: null,
+    };
+    users.set('staff-student', { ...base, id: 'staff-student', email: 's@example.com', role: Role.STUDENT });
+    users.set('staff-admin', { ...base, id: 'staff-admin', email: 'a@example.com', role: Role.ADMIN });
+
+    const anonymous = await fetch(`${baseUrl}/auth/staff`, { method: 'POST', headers: headers(), body });
+    const asStudent = await fetch(`${baseUrl}/auth/staff`, {
+      method: 'POST',
+      headers: headers(await jwtService.signAsync({ sub: 'staff-student' })),
+      body,
+    });
+    const asAdmin = await fetch(`${baseUrl}/auth/staff`, {
+      method: 'POST',
+      headers: headers(await jwtService.signAsync({ sub: 'staff-admin' })),
+      body,
+    });
+    const wrongRole = await fetch(`${baseUrl}/auth/staff`, {
+      method: 'POST',
+      headers: headers(await jwtService.signAsync({ sub: 'staff-admin' })),
+      body: JSON.stringify({ ...JSON.parse(body), email: 'x@example.com', role: Role.STUDENT }),
+    });
+
+    expect(anonymous.status).toBe(401);
+    expect(asStudent.status).toBe(403);
+    expect(asAdmin.status).toBe(201);
+    expect(await asAdmin.json()).toMatchObject({ role: Role.CONTROLLER });
+    expect(wrongRole.status).toBe(400);
+  });
+
+  it('throttles repeated login attempts on the same account', async () => {
+    const attempt = () =>
+      fetch(`${baseUrl}/auth/login`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ email: 'bruteforce@example.com', password: 'wrong-password-123' }),
+      });
+
+    const statuses: number[] = [];
+    for (let i = 0; i < 11; i += 1) statuses.push((await attempt()).status);
+
+    expect(statuses.slice(0, 10).every((status) => status === 401)).toBe(true);
+    expect(statuses[10]).toBe(429);
+  }, 30_000);
 });

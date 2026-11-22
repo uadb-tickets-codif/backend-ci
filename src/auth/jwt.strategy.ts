@@ -8,6 +8,8 @@ import { PrismaService } from '../prisma/prisma.service';
 
 interface JwtPayload {
   sub: string;
+  // Présent uniquement sur les jetons à usage restreint (ex. QR code repas).
+  purpose?: string;
 }
 
 @Injectable()
@@ -26,10 +28,13 @@ export class JwtStrategy extends PassportStrategy(Strategy) {
   async validate(
     payload: JwtPayload | null | undefined,
   ): Promise<AuthenticatedUser> {
+    // Un jeton à usage restreint (QR code montré au contrôleur) ne doit jamais
+    // servir de jeton d'accès à l'API.
     if (
       !payload ||
       typeof payload.sub !== 'string' ||
-      payload.sub.length === 0
+      payload.sub.length === 0 ||
+      payload.purpose !== undefined
     ) {
       throw new UnauthorizedException('Invalid access token');
     }

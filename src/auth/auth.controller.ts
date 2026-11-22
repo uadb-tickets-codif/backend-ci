@@ -21,6 +21,8 @@ import { Role } from '@prisma/client';
 import { Request } from 'express';
 import { AuthenticatedUser } from './auth.constants';
 import { AuthService } from './auth.service';
+import { RateLimit, RateLimitGuard } from '../common/rate-limit.guard';
+import { CreateStaffDto } from './dto/create-staff.dto';
 import { LoginDto } from './dto/login.dto';
 import { RegisterDto } from './dto/register.dto';
 import { JwtAuthGuard } from './jwt-auth.guard';
@@ -36,17 +38,30 @@ export class AuthController {
 
   @Post('register')
   @ApiCreatedResponse({ description: 'Compte étudiant créé' })
-  @ApiConflictResponse({ description: 'Email ou numéro étudiant déjà utilisé' })
+  @ApiConflictResponse({ description: 'Adresse e-mail déjà utilisée' })
   register(@Body() dto: RegisterDto) {
     return this.authService.register(dto);
   }
 
   @Post('login')
   @HttpCode(HttpStatus.OK)
+  @UseGuards(RateLimitGuard)
+  @RateLimit({ limit: 10, windowMs: 15 * 60 * 1000, identifierField: 'email' })
   @ApiOkResponse({ description: 'Jeton JWT et profil utilisateur' })
   @ApiUnauthorizedResponse({ description: 'Identifiants invalides' })
   login(@Body() dto: LoginDto) {
     return this.authService.login(dto);
+  }
+
+  @Post('staff')
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles(Role.ADMIN)
+  @ApiBearerAuth()
+  @ApiCreatedResponse({ description: 'Compte contrôleur ou administrateur créé' })
+  @ApiConflictResponse({ description: 'Adresse e-mail déjà utilisée' })
+  @ApiForbiddenResponse({ description: 'Réservé aux administrateurs' })
+  createStaff(@Body() dto: CreateStaffDto) {
+    return this.authService.createStaff(dto);
   }
 
   @Get('me')

@@ -1,12 +1,13 @@
-import { IsNotEmpty, IsString } from 'class-validator';
-import { ApiProperty } from '@nestjs/swagger';
+import { IsOptional, IsString } from 'class-validator';
+import { ApiPropertyOptional } from '@nestjs/swagger';
 
 export class ReserveBedDto {
-  @ApiProperty({
-    example: '20260003',
-    description: 'Matricule de l’étudiant qui réserve le lit',
+  @ApiPropertyOptional({
+    deprecated: true,
+    description:
+      'Ignoré : le lit est réservé pour l’étudiant identifié par son jeton d’accès.',
   })
+  @IsOptional()
   @IsString()
-  @IsNotEmpty({ message: 'Le matricule étudiant est obligatoire.' })
-  studentNumber: string;
+  studentNumber?: string;
 }

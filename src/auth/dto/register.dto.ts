@@ -37,7 +37,13 @@ export class RegisterDto {
   @IsEnum(Gender)
   gender!: Gender;
 
-  @ApiPropertyOptional({ example: '20250001', maxLength: 32 })
+  @ApiPropertyOptional({
+    example: '20250001',
+    maxLength: 32,
+    deprecated: true,
+    description:
+      'Ignoré : le numéro étudiant est rattaché au compte lors de la vérification d’éligibilité (POST /codification/verify), avec la date de naissance.',
+  })
   @IsOptional()
   @IsString()
   @MinLength(1)

@@ -28,4 +28,4 @@ export class GetBedsFilterDto {
   @IsOptional()
   @IsEnum(BedStatus)
   status?: BedStatus;
-}
+}

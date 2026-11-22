@@ -5,52 +5,77 @@ import {
   UnauthorizedException,
 } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
-import { Prisma, Role } from '@prisma/client';
+import { Gender, Prisma, Role } from '@prisma/client';
 import * as bcrypt from 'bcrypt';
 import {
   BCRYPT_SALT_ROUNDS,
   JWT_ACCESS_TOKEN_TTL_SECONDS,
   PUBLIC_USER_SELECT,
 } from './auth.constants';
+import { CreateStaffDto } from './dto/create-staff.dto';
 import { LoginDto } from './dto/login.dto';
 import { RegisterDto } from './dto/register.dto';
 import { PrismaService } from '../prisma/prisma.service';
 
+interface NewUserInput {
+  firstName: string;
+  lastName: string;
+  email: string;
+  password: string;
+  gender: Gender;
+}
+
 @Injectable()
 export class AuthService {
+  // Hash factice : évite de révéler par le temps de réponse qu'un e-mail n'existe pas.
+  private dummyHash?: string;
+
   constructor(
     private readonly prisma: PrismaService,
     private readonly jwtService: JwtService,
   ) {}
 
-  async register(dto: RegisterDto) {
-    if (Buffer.byteLength(dto.password, 'utf8') > 72) {
-      throw new BadRequestException('Password must be at most 72 bytes');
+  /**
+   * Inscription étudiante. Le numéro étudiant n'est volontairement pas enregistré
+   * ici : n'importe qui pourrait réserver le matricule d'un autre. Il est rattaché
+   * au compte par POST /codification/verify, qui exige aussi la date de naissance.
+   */
+  register(dto: RegisterDto) {
+    return this.createUser(dto, Role.STUDENT);
+  }
+
+  /** Création d'un compte contrôleur ou administrateur par un administrateur. */
+  createStaff(dto: CreateStaffDto) {
+    return this.createUser(dto, dto.role);
+  }
+
+  private async createUser(input: NewUserInput, role: Role) {
+    if (Buffer.byteLength(input.password, 'utf8') > 72) {
+      throw new BadRequestException(
+        'Le mot de passe doit faire 72 octets au maximum.',
+      );
     }
 
-    const passwordHash = await bcrypt.hash(dto.password, BCRYPT_SALT_ROUNDS);
+    const passwordHash = await bcrypt.hash(input.password, BCRYPT_SALT_ROUNDS);
 
     try {
-      const user = await this.prisma.user.create({
+      return await this.prisma.user.create({
         data: {
-          firstName: dto.firstName.trim(),
-          lastName: dto.lastName.trim(),
-          email: dto.email.trim().toLowerCase(),
+          firstName: input.firstName.trim(),
+          lastName: input.lastName.trim(),
+          email: input.email.trim().toLowerCase(),
           passwordHash,
-          gender: dto.gender,
-          studentNumber: dto.studentNumber?.trim(),
-          role: Role.STUDENT,
+          gender: input.gender,
+          role,
         },
         select: PUBLIC_USER_SELECT,
       });
-
-      return user;
     } catch (error) {
       if (
         error instanceof Prisma.PrismaClientKnownRequestError &&
         error.code === 'P2002'
       ) {
-        throw new ConflictException('Email or student number already exists');
+        throw new ConflictException('Cette adresse e-mail est déjà utilisée.');
       }
 
       throw error;
@@ -62,12 +87,16 @@ export class AuthService {
       where: { email: dto.email.trim().toLowerCase() },
     });
 
-    if (
-      !user ||
-      Buffer.byteLength(dto.password, 'utf8') > 72 ||
-      !(await bcrypt.compare(dto.password, user.passwordHash))
-    ) {
-      throw new UnauthorizedException('Invalid email or password');
+    const passwordTooLong = Buffer.byteLength(dto.password, 'utf8') > 72;
+    const passwordMatches = passwordTooLong
+      ? false
+      : await bcrypt.compare(
+          dto.password,
+          user?.passwordHash ?? (await this.getDummyHash()),
+        );
+
+    if (!user || !passwordMatches) {
+      throw new UnauthorizedException('Adresse e-mail ou mot de passe invalide.');
     }
 
     const accessToken = await this.jwtService.signAsync({
@@ -95,5 +124,13 @@ export class AuthService {
       expiresIn: JWT_ACCESS_TOKEN_TTL_SECONDS,
       user: safeUser,
     };
+  }
+
+  private async getDummyHash(): Promise<string> {
+    this.dummyHash ??= await bcrypt.hash(
+      'mot-de-passe-factice',
+      BCRYPT_SALT_ROUNDS,
+    );
+    return this.dummyHash;
   }
 }

@@ -28,28 +28,40 @@ export class TicketsController {
   constructor(private readonly ticketsService: TicketsService) {}
 
   @Get('wallet')
-  @Roles(Role.STUDENT)
   @ApiOkResponse({ description: 'Solde du portefeuille en FCFA' })
   getWallet(@Req() request: AuthenticatedRequest) {
     return this.ticketsService.getWallet(request.user.id);
   }
 
   @Post('wallet/top-up')
-  @Roles(Role.STUDENT)
   @ApiCreatedResponse({ description: 'Résultat de la recharge simulée' })
   topUp(@Req() request: AuthenticatedRequest, @Body() dto: TopUpDto) {
     return this.ticketsService.topUp(request.user.id, dto);
   }
 
   @Get('wallet/transactions')
-  @Roles(Role.STUDENT)
   @ApiOkResponse({ description: 'Historique des transactions du portefeuille' })
   getTransactions(@Req() request: AuthenticatedRequest) {
     return this.ticketsService.getTransactions(request.user.id);
   }
 
-  @Get('tickets/prices')
+  @Get('tickets/available')
   @Roles(Role.STUDENT)
+  @ApiOkResponse({
+    description: 'Tickets achetés et non utilisés, par service',
+  })
+  getAvailableTickets(@Req() request: AuthenticatedRequest) {
+    return this.ticketsService.getAvailableTickets(request.user.id);
+  }
+
+  @Get('tickets/meals')
+  @Roles(Role.STUDENT)
+  @ApiOkResponse({ description: 'Derniers repas servis à l’étudiant' })
+  getMealHistory(@Req() request: AuthenticatedRequest) {
+    return this.ticketsService.getMealHistory(request.user.id);
+  }
+
+  @Get('tickets/prices')
   @ApiOkResponse({
     description: 'Tarifs des tickets par type de repas en FCFA',
   })
@@ -80,7 +92,6 @@ export class TicketsController {
   }
 
   @Post('tickets/purchase')
-  @Roles(Role.STUDENT)
   @ApiCreatedResponse({ description: 'Résultat de l’achat simulé' })
   purchase(
     @Req() request: AuthenticatedRequest,

@@ -24,10 +24,10 @@ NestJS 11, TypeScript, Prisma 6, PostgreSQL 16, Vitest, Docker, Jenkins, Trivy.
 
 | Module | Contenu |
 |---|---|
-| **Authentification** | Inscription et connexion, mots de passe hachés (bcrypt), jeton JWT, trois rôles : `STUDENT`, `CONTROLLER`, `ADMIN` |
-| **Portefeuille et tickets** | Solde en FCFA, recharge simulée, achat de tickets par service (petit-déjeuner 50 F, déjeuner 100 F, dîner 100 F), historique des transactions |
-| **QR code et contrôle** | Jeton QR signé et renouvelable (il ne contient pas le solde), scan par le contrôleur, un repas par service et par jour. Résultats : `OK`, `INSUFFICIENT_BALANCE`, `ALREADY_SERVED`, `INVALID_TOKEN`, `TICKET_NOT_FOUND` |
-| **Codification** | Import CSV des étudiants codifiables, vérification d'éligibilité, dépôt de la CNI et de la carte étudiante, validation ou rejet par l'administrateur, gestion des pavillons, chambres et lits |
+| **Authentification** | Inscription et connexion (limitées à 10 essais par 15 min et par compte), mots de passe hachés (bcrypt), jeton JWT, trois rôles : `STUDENT`, `CONTROLLER`, `ADMIN`. `POST /auth/staff` (administrateur) crée les comptes contrôleur et administrateur |
+| **Portefeuille et tickets** | Solde en FCFA, recharge simulée, achat de tickets par service (petit-déjeuner 50 F, déjeuner 100 F, dîner 100 F), historique des transactions, tickets disponibles (`GET /tickets/available`) et repas pris (`GET /tickets/meals`) |
+| **QR code et contrôle** | Jeton QR signé et renouvelable (il ne contient pas le solde), scan par le contrôleur, un repas par service et par jour. Au scan, un ticket déjà acheté pour ce service est consommé en priorité (`paymentMethod: TICKET`, sans second débit) ; sans ticket, le repas est débité du solde (`paymentMethod: WALLET`). Résultats : `OK`, `INSUFFICIENT_BALANCE`, `ALREADY_SERVED`, `INVALID_TOKEN`, `TICKET_NOT_FOUND` |
+| **Codification** | Import CSV des étudiants codifiables (colonnes en anglais ou en français, genre M/F), vérification d'éligibilité qui rattache le matricule au compte, dépôt de la CNI et de la carte étudiante, validation ou rejet motivé par l'administrateur, consultation de son dossier (`GET /codification/me`), liste des lits et réservation |
 | **Santé** | `GET /health` vérifie la connexion à PostgreSQL (200 si la base répond, 503 sinon) |
 
 La liste exacte des routes, avec les corps de requête et de réponse, est dans **Swagger**.
@@ -140,9 +140,20 @@ Le push et le déclenchement du déploiement ne se font que sur les branches `de
 
 ## Qualité et sécurité
 
-- Mots de passe hachés avec bcrypt, jetons JWT, contrôle d'accès par rôle.
+- Mots de passe hachés avec bcrypt, jetons JWT, contrôle d'accès par rôle sur **toutes** les routes sauf `/health`, `/auth/register` et `/auth/login`. L'identité vient toujours du jeton, jamais du corps ni de l'URL de la requête.
+- Le jeton du QR code (usage restreint, montré au contrôleur) est refusé comme jeton d'accès à l'API.
 - Validation globale des requêtes (DTO), CORS configuré.
-- Documents téléversés : types et taille contrôlés, stockés hors de tout dossier public, accessibles uniquement à l'étudiant concerné et à l'administration.
+- Documents téléversés : type réel vérifié dans le contenu du fichier (PDF, JPG ou PNG), 5 Mo maximum, stockés hors de tout dossier public (`uploads/documents/<id du compte>/`), accessibles uniquement à l'étudiant concerné et à l'administration.
+- Le numéro étudiant n'est rattaché à un compte qu'après la vérification d'éligibilité (matricule + date de naissance), pour éviter qu'on réserve le matricule d'un autre.
+- Ne jamais versionner `uploads/` : il contient des pièces d'identité.
+
+### Créer le premier administrateur
+
+Les comptes `CONTROLLER` et `ADMIN` se créent via `POST /auth/staff`, réservé à un administrateur. Pour le tout premier : créer un compte étudiant normalement, puis le promouvoir en base :
+
+```sql
+UPDATE users SET role = 'ADMIN' WHERE email = 'admin@exemple.sn';
+```
 - Aucun secret dans le dépôt : seules des valeurs de démonstration figurent dans `.env.example`.
 - `package-lock.json` toujours commité. En cas de conflit, ne pas le résoudre à la main : prendre une des deux versions, relancer `npm install`, puis vérifier avec `npm ci`.
 
