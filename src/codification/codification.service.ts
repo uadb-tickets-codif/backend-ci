@@ -215,23 +215,15 @@ export class CodificationService {
       );
     }
 
-    // Recherche ou création automatique du compte utilisateur
-    let user = await this.prisma.user.findUnique({
+    // Les documents doivent toujours être rattachés au compte authentifié.
+    const user = await this.prisma.user.findUnique({
       where: { studentNumber },
     });
 
     if (!user) {
-      user = await this.prisma.user.create({
-        data: {
-          studentNumber: codifiable.studentNumber,
-          firstName: codifiable.firstName,
-          lastName: codifiable.lastName,
-          email: codifiable.email,
-          gender: codifiable.genre,
-          passwordHash: '$2b$10$e8R6.Q4nQ2W21/bM8QeJ8uW2211223344556677889900', // Hash temporaire
-          codificationStatus: CodificationStatus.DOCUMENTS_SUBMITTED,
-        },
-      });
+      throw new ForbiddenException(
+        'Aucun compte étudiant associé à ce matricule. Connectez-vous avec le compte étudiant correspondant.',
+      );
     }
 
     const cniFile = files?.cni?.[0];
