@@ -66,6 +66,7 @@
   },
   "overrides": {
     "deepmerge-ts": "^8.0.2",
+    "effect": "^3.22.5",
     "glob": "^14.0.4",
     "minimatch": "^11.0.5",
     "multer": "^2.5.0"
